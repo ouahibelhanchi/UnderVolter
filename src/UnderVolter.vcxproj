@@ -164,6 +164,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Config.c" />
+    <ClCompile Include="IniHelpers.c" />
     <ClCompile Include="NvramSetup.c" />
     <ClCompile Include="SecureBootEnroll.c" />
     <ClCompile Include="ConsoleUi.c" />
@@ -193,6 +194,7 @@
   <ItemGroup>
     <ClInclude Include="BmpFont.h" />
     <ClInclude Include="Config.h" />
+    <ClInclude Include="IniHelpers.h" />
     <ClInclude Include="NvramSetup.h" />
     <ClInclude Include="SecureBootEnroll.h" />
     <ClInclude Include="ConsoleUi.h" />

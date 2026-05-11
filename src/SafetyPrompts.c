@@ -7,11 +7,9 @@
 #include "UiConsole.h"
 #include "CpuInfo.h"
 #include <Library/UefiLib.h>
-#include <Library/UefiBootServicesTableLib.h>
+#include <Library/UefiBootServicesTableLib.h>     // gBS, gST
+#include "Config.h"                               // gEmergencyExit
 
-extern UINT8 gEmergencyExit;
-extern EFI_BOOT_SERVICES* gBS;
-extern EFI_SYSTEM_TABLE*  gST;
 extern CPUINFO gCpuInfo;
 
 // If gEmergencyExit is set, display a 10-step countdown progress bar (~2 s

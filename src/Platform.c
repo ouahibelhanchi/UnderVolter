@@ -729,7 +729,7 @@ EFI_STATUS EFIAPI DiscoverPlatform(IN OUT PLATFORM** ppsys)
     UiPrint(
       L"[ERROR] Unable to get bootstrap processor (error: 0x%x)\n", status);
 
-    return status;
+    goto Error;
   }
 
   //
@@ -742,7 +742,7 @@ EFI_STATUS EFIAPI DiscoverPlatform(IN OUT PLATFORM** ppsys)
   );
 
   if (EFI_ERROR(status)) {
-    return status;
+    goto Error;
   }
 
   ppd->PkgCnt = 1;                    // Boot Processor
@@ -767,6 +767,13 @@ EFI_STATUS EFIAPI DiscoverPlatform(IN OUT PLATFORM** ppsys)
   ProbePackages(ppd);
   
   return EFI_SUCCESS;
+
+Error:
+  if (*ppsys) {
+    FreePool(*ppsys);
+    *ppsys = NULL;
+  }
+  return status;
 }
 
 /*******************************************************************************

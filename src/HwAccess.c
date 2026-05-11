@@ -79,10 +79,7 @@ VOID EFIAPI HandleProbingFault(MINISTAT *pst)
 
   if (cnt == 1)
   {
-    /////////////////////////////////////////////////////////////
-    // TODO: Fix for MP needed - this will not work on non-BSP //
-    /////////////////////////////////////////////////////////////
-    
+    // Safe to call from any core – MiniTraceEx internally uses MiniTraceLock.
     MiniTraceEx("UnderVolter has encountered a fatal error during operation.\n");    
   }
 

@@ -4,9 +4,7 @@
 //               Falls back to an ASCII art banner when GOP is unavailable.
 #include "ConsoleUi.h"
 #include "UiConsole.h"
-#include <Library/UefiBootServicesTableLib.h>
-
-extern EFI_BOOT_SERVICES* gBS;
+#include <Library/UefiBootServicesTableLib.h>     // gBS
 
 // ─── Sine LUT (64 entries, values 0-255, one full cycle) ─────────────────────
 static const UINT8 kSin64[64] = {

@@ -14,9 +14,18 @@
 
 //#define ENABLE_MINILOG_TRACING
 
-extern UINT32 gAppDelaySeconds;
+extern UINT32  gAppDelaySeconds;
 extern BOOLEAN gAppQuietMode;
 extern BOOLEAN gIniFound;
+
+// Runtime safety / behaviour flags (defined in Config.c, populated from INI).
+extern UINT8   gPostProgrammingOcLock;
+extern UINT8   gEmergencyExit;
+extern UINT8   gEnableSaferAsm;
+extern UINT8   gDisableFirmwareWDT;
+extern UINT64  gSelfTestMaxRuns;
+extern UINT8   gPrintPackageConfig;
+extern UINT8   gPrintVFPoints_PostProgram;
 
 VOID LoadAppSettings(VOID);
 VOID ReleaseAppSettings(VOID);

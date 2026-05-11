@@ -12,6 +12,7 @@
 #include <Library/DebugLib.h>
 #include <Protocol/MpService.h>
 #include <Library/SynchronizationLib.h>
+#include <Library/UefiBootServicesTableLib.h>     // gBS, gST
 
 #if defined(_MSC_VER)
 #include <intrin.h>
@@ -47,8 +48,6 @@ extern PLATFORM* gPlatform;
  ******************************************************************************/
 
 extern EFI_MP_SERVICES_PROTOCOL* gMpServices;
-extern EFI_BOOT_SERVICES* gBS;
-extern EFI_SYSTEM_TABLE* gST;
 extern UINTN gBootCpu;
 
 /*******************************************************************************

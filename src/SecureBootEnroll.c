@@ -50,6 +50,7 @@
 #include "Config.h"
 #include "UiConsole.h"
 #include "UnderVolterCert.h"
+#include "IniHelpers.h"
 
 // ─── GUIDs ───────────────────────────────────────────────────────────────────
 
@@ -186,59 +187,6 @@ typedef struct {
 } SBE_AUTH2_HEADER;
 #pragma pack()
 
-// ─── Minimal INI helpers (no libc) ───────────────────────────────────────────
-
-static BOOLEAN SbeMatchCI(CONST CHAR8* s, CONST CHAR8* lit) {
-    while (*lit) {
-        CHAR8 a = *s, b = *lit;
-        if (a >= 'a' && a <= 'z') a = (CHAR8)(a - 32);
-        if (b >= 'a' && b <= 'z') b = (CHAR8)(b - 32);
-        if (a != b) return FALSE;
-        s++; lit++;
-    }
-    return TRUE;
-}
-
-static UINTN SbeStrLen8(CONST CHAR8* s) {
-    UINTN n = 0; while (*s++) n++; return n;
-}
-
-static BOOLEAN SbeReadBool(CONST CHAR8* p, BOOLEAN Default) {
-    while (*p == ' ' || *p == '\t') p++;
-    if (*p == '=') {
-        p++;
-        while (*p == ' ' || *p == '\t') p++;
-        if (*p == '1') return TRUE;
-        if (*p == '0') return FALSE;
-    }
-    return Default;
-}
-
-static UINT32 SbeReadUint(CONST CHAR8* p, UINT32 Default) {
-    while (*p == ' ' || *p == '\t') p++;
-    if (*p != '=') return Default;
-    p++;
-    while (*p == ' ' || *p == '\t') p++;
-    if (*p < '0' || *p > '9') return Default;
-    UINT32 v = 0;
-    while (*p >= '0' && *p <= '9') v = v * 10 + (UINT32)(*p++ - '0');
-    return v;
-}
-
-static VOID SbeReadPath(CONST CHAR8* p, CHAR16* Out, UINTN OutLen) {
-    while (*p == ' ' || *p == '\t') p++;
-    if (*p != '=') return;
-    p++;
-    while (*p == ' ' || *p == '\t') p++;
-    UINTN i = 0;
-    while (*p && *p != '\r' && *p != '\n' && i < OutLen - 1) {
-        CHAR8 c = *p++;
-        Out[i++] = (c == '/') ? L'\\' : (CHAR16)c;
-    }
-    while (i > 0 && Out[i - 1] == L' ') i--;
-    Out[i] = L'\0';
-}
-
 // ─── [SecureBoot] INI parser ─────────────────────────────────────────────────
 
 static VOID ParseSecureBootSection(CONST CHAR8* IniData, SBE_CONFIG* Cfg) {
@@ -269,26 +217,26 @@ static VOID ParseSecureBootSection(CONST CHAR8* IniData, SBE_CONFIG* Cfg) {
         if (*p == ';' || *p == '#') { while (*p && *p != '\n') p++; continue; }
 
         if (*p == '[') {
-            p++;
-            inSect = SbeMatchCI(p, "SecureBoot") && (p[10] == ']');
+            inSect = IniSectionMatch(p + 1, "SecureBoot");
             while (*p && *p != '\n') p++;
             continue;
         }
 
         if (inSect) {
-            // Note: longer keys must be checked before their prefixes (SelfEnrollReboot before SelfEnroll).
-            if      (SbeMatchCI(p, "SecureBootEnroll"))  { Cfg->Enabled          = SbeReadBool(p + SbeStrLen8("SecureBootEnroll"),  FALSE); }
-            else if (SbeMatchCI(p, "KeyDir"))             { SbeReadPath(p + SbeStrLen8("KeyDir"), Cfg->KeyDir, SBE_MAX_PATH); }
-            else if (SbeMatchCI(p, "EnrollDBX"))          { Cfg->EnrollDBX        = SbeReadBool(p + SbeStrLen8("EnrollDBX"),         FALSE); }
-            else if (SbeMatchCI(p, "EnrollDB"))           { Cfg->EnrollDB         = SbeReadBool(p + SbeStrLen8("EnrollDB"),          TRUE);  }
-            else if (SbeMatchCI(p, "EnrollKEK"))          { Cfg->EnrollKEK        = SbeReadBool(p + SbeStrLen8("EnrollKEK"),         TRUE);  }
-            else if (SbeMatchCI(p, "EnrollPK"))           { Cfg->EnrollPK         = SbeReadBool(p + SbeStrLen8("EnrollPK"),          TRUE);  }
-            else if (SbeMatchCI(p, "RebootAfterEnroll"))  { Cfg->RebootAfter      = SbeReadBool(p + SbeStrLen8("RebootAfterEnroll"), TRUE);  }
-            else if (SbeMatchCI(p, "SelfEnrollReboot"))        { Cfg->SelfEnrollReboot        = SbeReadBool(p + SbeStrLen8("SelfEnrollReboot"),        TRUE);  }
-            else if (SbeMatchCI(p, "SelfEnroll"))              { Cfg->SelfEnroll               = SbeReadBool(p + SbeStrLen8("SelfEnroll"),               FALSE); }
-            else if (SbeMatchCI(p, "BootToFirmwareUITimeout")) { Cfg->BootToFirmwareUITimeout  = SbeReadUint(p + SbeStrLen8("BootToFirmwareUITimeout"),  5);     }
-            else if (SbeMatchCI(p, "BootToFirmwareUI"))        { Cfg->BootToFirmwareUI         = SbeReadBool(p + SbeStrLen8("BootToFirmwareUI"),         FALSE); }
-            else if (SbeMatchCI(p, "TryDeployedMode"))         { Cfg->TryDeployedMode          = SbeReadBool(p + SbeStrLen8("TryDeployedMode"),          TRUE);  }
+            // Note: longer keys must be checked before their prefixes
+            // (SelfEnrollReboot before SelfEnroll, BootToFirmwareUITimeout before BootToFirmwareUI).
+            if      (IniMatchCI(p, "SecureBootEnroll"))        { Cfg->Enabled                  = IniReadBool(p + IniStrLen8("SecureBootEnroll"),        FALSE); }
+            else if (IniMatchCI(p, "KeyDir"))                  { IniReadPath(p + IniStrLen8("KeyDir"), Cfg->KeyDir, SBE_MAX_PATH); }
+            else if (IniMatchCI(p, "EnrollDBX"))               { Cfg->EnrollDBX                = IniReadBool(p + IniStrLen8("EnrollDBX"),               FALSE); }
+            else if (IniMatchCI(p, "EnrollDB"))                { Cfg->EnrollDB                 = IniReadBool(p + IniStrLen8("EnrollDB"),                TRUE);  }
+            else if (IniMatchCI(p, "EnrollKEK"))               { Cfg->EnrollKEK                = IniReadBool(p + IniStrLen8("EnrollKEK"),               TRUE);  }
+            else if (IniMatchCI(p, "EnrollPK"))                { Cfg->EnrollPK                 = IniReadBool(p + IniStrLen8("EnrollPK"),                TRUE);  }
+            else if (IniMatchCI(p, "RebootAfterEnroll"))       { Cfg->RebootAfter              = IniReadBool(p + IniStrLen8("RebootAfterEnroll"),       TRUE);  }
+            else if (IniMatchCI(p, "SelfEnrollReboot"))        { Cfg->SelfEnrollReboot         = IniReadBool(p + IniStrLen8("SelfEnrollReboot"),        TRUE);  }
+            else if (IniMatchCI(p, "SelfEnroll"))              { Cfg->SelfEnroll               = IniReadBool(p + IniStrLen8("SelfEnroll"),              FALSE); }
+            else if (IniMatchCI(p, "BootToFirmwareUITimeout")) { Cfg->BootToFirmwareUITimeout  = IniReadUint(p + IniStrLen8("BootToFirmwareUITimeout"), 5);     }
+            else if (IniMatchCI(p, "BootToFirmwareUI"))        { Cfg->BootToFirmwareUI         = IniReadBool(p + IniStrLen8("BootToFirmwareUI"),        FALSE); }
+            else if (IniMatchCI(p, "TryDeployedMode"))         { Cfg->TryDeployedMode          = IniReadBool(p + IniStrLen8("TryDeployedMode"),         TRUE);  }
         }
 
         while (*p && *p != '\n') p++;
@@ -572,6 +520,25 @@ static VOID SbeSetBootToFwUI(IN EFI_RUNTIME_SERVICES* RT) {
         sizeof(OsInd), &OsInd);
 }
 
+// Pin the next firmware boot to the current BootCurrent entry.  Same rationale
+// as in NvramSetup.c: protects against firmware BDS quirks (e.g. Lenovo Legion)
+// that treat a warm reset as a "boot failed" event and skip to the next entry.
+// Best-effort; any failure is silent.
+static VOID SbeSetBootNextToCurrent(IN EFI_RUNTIME_SERVICES* RT) {
+    UINT16 cur  = 0;
+    UINTN  size = sizeof(cur);
+    EFI_STATUS s = RT->GetVariable(L"BootCurrent", &gSbeGlobalVarGuid,
+                                   NULL, &size, &cur);
+    if (EFI_ERROR(s) || size != sizeof(cur)) return;
+
+    RT->SetVariable(
+        L"BootNext", &gSbeGlobalVarGuid,
+        EFI_VARIABLE_NON_VOLATILE       |
+        EFI_VARIABLE_BOOTSERVICE_ACCESS |
+        EFI_VARIABLE_RUNTIME_ACCESS,
+        sizeof(cur), &cur);
+}
+
 // Ask the user whether to boot to BIOS/FW UI.
 // Shows "[Y/N] (Ns)" countdown.  Returns TRUE only on explicit Y keypress.
 // Any other key or timeout → returns FALSE (normal reboot).
@@ -635,6 +602,7 @@ static BOOLEAN SbeDoReboot(
             UiPrint(L"\n");
         }
     }
+    SbeSetBootNextToCurrent(RT);
     RT->ResetSystem(EfiResetWarm, EFI_SUCCESS, 0, NULL);
     return FALSE;
 }

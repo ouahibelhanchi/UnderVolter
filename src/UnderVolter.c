@@ -2,6 +2,8 @@
 #include <Uefi.h>
 #include <Library/UefiLib.h>
 #include <Library/UefiApplicationEntryPoint.h>
+#include <Library/UefiBootServicesTableLib.h>     // gBS, gImageHandle
+#include <Library/BaseMemoryLib.h>                // SetMem/CopyMem standard
 #include <Protocol/MpService.h>
 
 #include "Platform.h"
@@ -27,11 +29,11 @@
  * Globals
  ******************************************************************************/
 
-extern UINT8 gEnableSaferAsm;
-extern UINT8 gDisableFirmwareWDT;
+// gEnableSaferAsm / gDisableFirmwareWDT are defined in Config.c and declared
+// in Config.h — included via Config.h above.  No local externs needed.
 
-extern EFI_BOOT_SERVICES* gBS;
-extern EFI_SYSTEM_TABLE*  gST;
+// gBS / gST come from UefiBootServicesTableLib (included above) — no need to
+// re-declare extern in this translation unit.
 
 extern CONST UINT32 _gUefiDriverRevision = 0;
 CHAR8* gEfiCallerBaseName = "UnderVolter";
@@ -94,14 +96,22 @@ EFI_STATUS InitializeUefiEnvironment(IN EFI_SYSTEM_TABLE* SystemTable)
 // Execution order:
 //   1. Load INI settings (Config.c)
 //   2. Init GOP console (UiConsole.c)
-//   3. CPU detection; warn and prompt if unknown
-//   4. Calibrate TSC
-//   5. Startup animation + InitializeUefiEnvironment
-//   6. Platform discovery (topology, VR, IccMax)
-//   7. Emergency-exit countdown (ESC to abort)
-//   8. ApplyPolicy: V/F, power limits, turbo ratios
-//   9. Optional AVX2 self-test
-//  10. Display results table, optional delay loop, cleanup
+//   3. NVRAM [SetupVar] patches (may reboot — CPU-agnostic, runs first)
+//   4. SelfEnroll Secure Boot keys (may reboot — CPU-agnostic, runs second)
+//   5. CPU detection; warn and prompt if unknown
+//   6. Calibrate TSC
+//   7. Startup animation + InitializeUefiEnvironment
+//   8. Platform discovery (topology, VR, IccMax)
+//   9. Emergency-exit countdown (ESC to abort)
+//  10. ApplyPolicy: V/F, power limits, turbo ratios
+//  11. Optional AVX2 self-test
+//  12. Display results table, optional delay loop, cleanup
+//
+// Reboot-triggering stages (NVRAM patch, SelfEnroll) are placed before CPU
+// detection / TSC calibration / animation so that on the bootstrap reboots
+// no CPU/timing work is wasted before the warm reset.  Both stages are
+// idempotent — second pass through them is a fast no-op when state already
+// matches the desired post-conditions.
 EFI_STATUS EFIAPI UefiMain(
   IN EFI_HANDLE        ImageHandle,
   IN EFI_SYSTEM_TABLE* SystemTable
@@ -114,9 +124,16 @@ EFI_STATUS EFIAPI UefiMain(
   }
 
   // Apply NVRAM Setup variable patches from [SetupVar] INI section.
-  // No-op when NvramPatchEnabled = 0 (default). If NvramPatchReboot = 1,
-  // issues a warm reset here and does not return — patches activate on next POST.
+  // No-op when NvramPatchEnabled = 0 (default). If NvramPatchReboot = 1
+  // and a write was needed, issues a warm reset here and does not return —
+  // patches activate on next POST.
   ApplyNvramSetupPatches(SystemTable);
+
+  // Enroll Secure Boot keys from [SecureBoot].  Both .auth-file enrollment
+  // and SelfEnroll are CPU-agnostic; placing them here means that on a
+  // bootstrap reboot no downstream work (CPU detection, TSC calibration,
+  // startup animation) was wasted before the warm reset.
+  EnrollSecureBootKeys(ImageHandle, SystemTable);
 
   // Gather basic CPU info
   gCpuDetected = DetectCpu();
@@ -140,11 +157,6 @@ EFI_STATUS EFIAPI UefiMain(
   if (!gAppQuietMode) {
     RunStartupAnimation();
   }
-
-  // Enroll Secure Boot keys — placed after the animation so [SBE] messages
-  // remain visible on screen.  A successful SelfEnroll reboots the system here
-  // (before any voltage changes are applied).
-  EnrollSecureBootKeys(ImageHandle, SystemTable);
 
   InitializeUefiEnvironment(SystemTable);
   StartupPlatformInit(SystemTable, &gPlatform);

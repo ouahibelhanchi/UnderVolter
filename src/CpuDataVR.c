@@ -451,6 +451,47 @@ VOLTCFGTEMPLATE vcfg_q_arrowlake_client = {
   }
 };
 
+///////////////////////////////////////////////////////////////////////////
+/// Lunar Lake Client (Core Ultra 200V, 2nd-gen Core Ultra mobile)     //
+///                                                                     //
+/// Tile architecture (2 tiles, vs 4 on MTL/ARL):                       //
+///   Compute Tile         : Lion Cove P-cores (no HT) + Skymont E-cores //
+///   Platform Controller  : SoC, GPU (Xe2 Battlemage), Media, IO       //
+/// On-package LPDDR5X — no discrete memory controller.                 //
+/// DLVR voltage regulation throughout.                                 //
+///                                                                     //
+/// OC Mailbox status on production silicon: heavily restricted.        //
+/// Public reverse-engineering of VR topology bit layout for LNL has   //
+/// not yet materialised at the time of writing.  Discovery disabled —  //
+/// voltage offsets via MSR 0x150 are attempted but may be silently     //
+/// dropped by firmware on locked SKUs.                                 //
+///                                                                     //
+/// To enable discovery once VR bit layout is confirmed: copy the MTL  //
+/// or ARL template and adjust per-domain masks.                        //
+///////////////////////////////////////////////////////////////////////////
+
+VOLTCFGTEMPLATE vcfg_q_lunarlake_client = {
+  {
+    /// IACORE — Lion Cove P-Core (no HT)
+    { 0x01, 0x00, 0, 0, 0, 0, "PCORE" },
+
+    /// GTSLICE — Xe2 Battlemage GPU (Platform Controller tile)
+    { 0x01, 0x00, 0, 0, 0, 0, "GTSLICE" },
+
+    /// RING — Compute Ring
+    { 0x01, 0x00, 0, 0, 0, 0, "RING" },
+
+    /// GTUNSLICE — Media engine (Platform Controller tile)
+    { 0x01, 0x00, 0, 0, 0, 0, "GTUNSLICE" },
+
+    /// UNCORE — Platform Controller / SoC
+    { 0x01, 0x00, 0, 0, 0, 0, "UNCORE" },
+
+    /// ECORE — Skymont E-Cores
+    { 0x01, 0x00, 0, 0, 0, 0, "ECORE" },
+  }
+};
+
 //////////////////////////
 /// Alder Lake Client  ///
 //////////////////////////

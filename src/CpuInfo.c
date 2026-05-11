@@ -4,24 +4,19 @@
 //             and E-Core detection via leaf 0x1A core type field.
 #include <Uefi.h>
 #include <Library/UefiLib.h>
+#include <Library/BaseMemoryLib.h>                // ZeroMem (EDK2 replacement for memset)
 #include "HwIntrinsicsX64.h"
 #include "CpuInfo.h"
 #include "Constants.h"
 
 /*******************************************************************************
- * 
+ *
  ******************************************************************************/
 
 #define CPUID_EAX   0
 #define CPUID_EBX   1
 #define CPUID_ECX   2
 #define CPUID_EDX   3
-
-/*******************************************************************************
- * 
- ******************************************************************************/
-
-extern void* memset(void* str, int c, UINTN n);
 
 /*******************************************************************************
  * GetCpuInfo
@@ -35,7 +30,7 @@ extern void* memset(void* str, int c, UINTN n);
 // types.  CPUID 0x1A EAX[31:24] == 0x20 identifies an E-Core (Gracemont).
 void GetCpuInfo(CPUINFO* ci)
 {
-  memset(ci, 0, sizeof(CPUINFO));
+  ZeroMem(ci, sizeof(CPUINFO));
 
   //////////////////
   // Brand String //

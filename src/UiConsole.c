@@ -9,11 +9,10 @@
 #include <Library/PrintLib.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
+#include <Library/UefiBootServicesTableLib.h>     // gST
 #include <Protocol/GraphicsOutput.h>
 
 #include "BmpFont.h"
-
-extern EFI_SYSTEM_TABLE* gST;
 
 // Scalable Screen Font (https://gitlab.com/bztsrc/scalable-font2)
 typedef struct {

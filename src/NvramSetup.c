@@ -20,6 +20,7 @@
 #include "NvramSetup.h"
 #include "Config.h"
 #include "UiConsole.h"
+#include "IniHelpers.h"
 
 extern BOOLEAN gAppQuietMode;
 
@@ -32,14 +33,51 @@ static EFI_GUID gSetupVarGuid = {
   { 0xA1, 0xE5, 0x3F, 0x3E, 0x36, 0xB2, 0x0D, 0xA9 }
 };
 
+// EFI_GLOBAL_VARIABLE GUID — for BootCurrent / BootNext reads and writes.
+static EFI_GUID gNvramGlobalVarGuid = {
+  0x8BE4DF61, 0x93CA, 0x11D2,
+  { 0xAA, 0x0D, 0x00, 0xE0, 0x98, 0x03, 0x2B, 0x8C }
+};
+
+// ── BootNext defensive helper ────────────────────────────────────────────────
+// Pin the next firmware boot to the same entry we are currently executing
+// from.  Most firmware BDS phases automatically re-pick the same BootOrder
+// entry after a warm reset, but a few (notably some Lenovo Legion units in
+// the field) treat the warm reset as a "boot failed" signal and skip to the
+// next entry — which would skip UnderVolter on the second pass and break
+// the bootstrap chain.  Writing BootNext = BootCurrent forces firmware to
+// honour the chain regardless of BDS quirks.  Best-effort: any failure is
+// silent — BootNext is belt-and-suspenders, not load-bearing.
+static VOID SetBootNextToCurrent(IN EFI_RUNTIME_SERVICES* RT) {
+  UINT16 cur  = 0;
+  UINTN  size = sizeof(cur);
+  EFI_STATUS s = RT->GetVariable(L"BootCurrent", &gNvramGlobalVarGuid,
+                                 NULL, &size, &cur);
+  if (EFI_ERROR(s) || size != sizeof(cur)) return;
+
+  RT->SetVariable(
+    L"BootNext", &gNvramGlobalVarGuid,
+    EFI_VARIABLE_NON_VOLATILE        |
+    EFI_VARIABLE_BOOTSERVICE_ACCESS  |
+    EFI_VARIABLE_RUNTIME_ACCESS,
+    sizeof(cur), &cur);
+}
+
 // Cap on number of Patch_N entries accepted from the INI file.
 #define NVRAM_MAX_PATCHES  16
 
-// ─── Minimal string / hex helpers (no libc in UEFI pre-boot) ─────────────────
+// Maximum allowed byte offset for Patch_N entries.  Modern OEM firmware (Dell
+// Precision and similar workstation BIOSes) ships Setup variables up to ~96 KB;
+// the historical 0xFFFF cap was too low.  This limit is a sanity bound on
+// parser input; the real bound at write time is the live dataSize returned by
+// GetVariable().
+#define NVRAM_MAX_OFFSET   0xFFFFFF
+
+// ─── Minimal hex parser (no libc in UEFI pre-boot) ───────────────────────────
 
 // Parse an unsigned hex integer from ASCII with optional "0x"/"0X" prefix.
 // Stops at the first non-hex character.  Returns 0 and sets *OutValid=FALSE
-// when no hex digits are found or the value exceeds 0xFFFF (max useful offset).
+// when no hex digits are found or the value exceeds NVRAM_MAX_OFFSET.
 static UINT32 ParseHex(CONST CHAR8* s, BOOLEAN* OutValid) {
   *OutValid = FALSE;
   while (*s == ' ' || *s == '\t') s++;
@@ -55,27 +93,10 @@ static UINT32 ParseHex(CONST CHAR8* s, BOOLEAN* OutValid) {
     else break;
     v = v * 16 + nibble;
     hasDigit = TRUE;
-    if (v > 0xFFFF) return 0;   // reject anything that won't fit in UINT16/UINT8
+    if (v > NVRAM_MAX_OFFSET) return 0;   // sanity cap on parser input
   }
   *OutValid = hasDigit;
   return v;
-}
-
-static UINTN StrLen8(CONST CHAR8* s) {
-  UINTN n = 0; while (*s++) n++; return n;
-}
-
-// Case-insensitive prefix match: returns TRUE if s starts with lit (ASCII only).
-// Does NOT advance s; caller must use strlen(lit) to skip past the matched part.
-static BOOLEAN MatchCI(CONST CHAR8* s, CONST CHAR8* lit) {
-  while (*lit) {
-    CHAR8 a = *s, b = *lit;
-    if (a >= 'a' && a <= 'z') a -= 32;
-    if (b >= 'a' && b <= 'z') b -= 32;
-    if (a != b) return FALSE;
-    s++; lit++;
-  }
-  return TRUE;
 }
 
 // ─── [SetupVar] INI section parser ───────────────────────────────────────────
@@ -89,7 +110,7 @@ static UINTN ParseSetupVarSection(
   CONST CHAR8* IniData,
   BOOLEAN*     OutEnabled,
   BOOLEAN*     OutReboot,
-  UINT16       OutOffsets[NVRAM_MAX_PATCHES],
+  UINT32       OutOffsets[NVRAM_MAX_PATCHES],
   UINT8        OutValues [NVRAM_MAX_PATCHES]
 ) {
   *OutEnabled = FALSE;
@@ -110,27 +131,20 @@ static UINTN ParseSetupVarSection(
     if (*p == ';' || *p == '#') { while (*p && *p != '\n') p++; continue; }
 
     if (*p == '[') {
-      // Section header — check for [SetupVar] (case-insensitive, no spaces)
-      p++;
-      inSect = MatchCI(p, "SetupVar") && (p[8] == ']');
+      // Section header — whitespace-tolerant [SetupVar] match
+      inSect = IniSectionMatch(p + 1, "SetupVar");
       while (*p && *p != '\n') p++;
       continue;
     }
 
     if (inSect) {
-      BOOLEAN valid = FALSE;
+      if (IniMatchCI(p, "NvramPatchEnabled")) {
+        *OutEnabled = IniReadBool(p + IniStrLen8("NvramPatchEnabled"), FALSE);
 
-      if (MatchCI(p, "NvramPatchEnabled")) {
-        CONST CHAR8* eq = p + StrLen8("NvramPatchEnabled");
-        while (*eq == ' ' || *eq == '\t') eq++;
-        if (*eq == '=') { eq++; *OutEnabled = (ParseHex(eq, &valid) != 0); }
+      } else if (IniMatchCI(p, "NvramPatchReboot")) {
+        *OutReboot = IniReadBool(p + IniStrLen8("NvramPatchReboot"), TRUE);
 
-      } else if (MatchCI(p, "NvramPatchReboot")) {
-        CONST CHAR8* eq = p + StrLen8("NvramPatchReboot");
-        while (*eq == ' ' || *eq == '\t') eq++;
-        if (*eq == '=') { eq++; *OutReboot = (ParseHex(eq, &valid) != 0); }
-
-      } else if (MatchCI(p, "Patch_") && count < NVRAM_MAX_PATCHES) {
+      } else if (IniMatchCI(p, "Patch_") && count < NVRAM_MAX_PATCHES) {
         // Format: Patch_N = 0xOFFSET : 0xVALUE
         // Both offset and value must parse as valid hex; reject silently if not.
         CONST CHAR8* eq = p;
@@ -144,7 +158,7 @@ static UINTN ParseSetupVarSection(
             eq++;
             UINT32 val = ParseHex(eq, &valValid);
             if (offValid && valValid && val <= 0xFF) {
-              OutOffsets[count] = (UINT16)offset;
+              OutOffsets[count] = offset;
               OutValues [count] = (UINT8)val;
               count++;
             }
@@ -165,7 +179,7 @@ VOID ApplyNvramSetupPatches(IN EFI_SYSTEM_TABLE* SystemTable)
 {
   BOOLEAN enabled  = FALSE;
   BOOLEAN doReboot = TRUE;
-  UINT16  offsets[NVRAM_MAX_PATCHES];
+  UINT32  offsets[NVRAM_MAX_PATCHES];
   UINT8   values [NVRAM_MAX_PATCHES];
 
   UINTN patchCount = ParseSetupVarSection(
@@ -210,24 +224,24 @@ VOID ApplyNvramSetupPatches(IN EFI_SYSTEM_TABLE* SystemTable)
   // and no reboot is triggered.
   UINTN applied = 0;
   for (UINTN i = 0; i < patchCount; i++) {
-    UINT16 off = offsets[i];
+    UINT32 off = offsets[i];
     UINT8  val = values[i];
 
     if ((UINTN)off >= dataSize) {
       if (!gAppQuietMode)
-        UiPrint(L"[NVRAM]   [0x%03X] SKIP (offset >= variable size)\n", off);
+        UiPrint(L"[NVRAM]   [0x%05X] SKIP (offset >= variable size)\n", off);
       continue;
     }
 
     if (data[off] == val) {
       // Already the desired value — no write needed for this offset.
       if (!gAppQuietMode)
-        UiPrint(L"[NVRAM]   [0x%03X]  0x%02X (already set)\n", off, val);
+        UiPrint(L"[NVRAM]   [0x%05X]  0x%02X (already set)\n", off, val);
       continue;
     }
 
     if (!gAppQuietMode)
-      UiPrint(L"[NVRAM]   [0x%03X]  0x%02X -> 0x%02X\n", off, data[off], val);
+      UiPrint(L"[NVRAM]   [0x%05X]  0x%02X -> 0x%02X\n", off, data[off], val);
     data[off] = val;
     applied++;
   }
@@ -277,7 +291,7 @@ VOID ApplyNvramSetupPatches(IN EFI_SYSTEM_TABLE* SystemTable)
         if (!EFI_ERROR(status)) {
           UINTN mismatch = 0;
           for (UINTN i = 0; i < patchCount; i++) {
-            UINT16 off = offsets[i];
+            UINT32 off = offsets[i];
             // Offset out of range counts as mismatch — patch could not land.
             if ((UINTN)off >= verifySize) {
               mismatch++;
@@ -340,6 +354,7 @@ VOID ApplyNvramSetupPatches(IN EFI_SYSTEM_TABLE* SystemTable)
     UiPrint(L"\n");
   }
 
+  SetBootNextToCurrent(RT);
   RT->ResetSystem(EfiResetWarm, EFI_SUCCESS, 0, NULL);
   // Not reached after warm reset.
 }

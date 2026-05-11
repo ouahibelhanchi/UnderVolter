@@ -170,6 +170,15 @@ CPUCONFIGTABLE gCpuConfigTable[] = {
 
   { {6, 197, 2} , "ArrowLake",    0, 11, 1, 1, &vcfg_q_arrowlake_client },    // ARL-S B0 desktop (C502, Core Ultra 200S)
   { {6, 198, 2} , "ArrowLake",    0, 11, 1, 1, &vcfg_q_arrowlake_client },    // ARL-HX B0 mobile  (C602, Core Ultra 200HX)
+
+  //
+  // Lunar Lake (Core Ultra 200V, 2nd-gen Core Ultra mobile)
+  // 2-tile arch: Compute (Lion Cove P, no HT + Skymont E) + Platform Controller.
+  // On-package LPDDR5X; DLVR voltage regulation throughout.
+  // OC Mailbox restricted on production silicon — VR discovery disabled,
+  // voltage offsets via MSR 0x150 attempted (may be dropped by firmware).
+
+  { {6, 189, 1} , "LunarLake",    0, 11, 1, 1, &vcfg_q_lunarlake_client },    // LNL B0 mobile (BD01, Core Ultra 200V)
 };
 
 
@@ -249,21 +258,60 @@ BOOLEAN DetectCpu()
   }
 
   //
-  // Detect CPU
+  // Detect CPU — two-pass match.
+  //
+  //   Pass 1: exact {family, model, stepping}.  Preserves precise behaviour for
+  //           every known CPU revision in the table.
+  //   Pass 2: {family, model} only — fallback for new steppings of known models
+  //           (e.g. a future RPL-S D0 or LNL C0 microcode revision).  Picks the
+  //           first sibling entry in table order; all entries sharing a (family,
+  //           model) pair use the same uArch and VR template by design, so the
+  //           only field that drifts is the stepping label printed on screen.
+  //           A warning is shown so the user knows the match used a fallback.
+  //
+  // Entry 0 ({0,0,0} "Unknown") is the sentinel placeholder for gActiveCpuData;
+  // skip it during scans so it cannot accidentally match a real CPUID triplet.
 
-  for (UINTN ccnt=0;ccnt<sizeof(gCpuConfigTable)/sizeof(CPUCONFIGTABLE);ccnt++) {
+  const UINTN tableSize = sizeof(gCpuConfigTable) / sizeof(CPUCONFIGTABLE);
 
-    CPUCONFIGTABLE* pt = &gCpuConfigTable[ccnt];
+  // Pass 1 — exact match
+  for (UINTN i = 1; i < tableSize; i++) {
+    CPUCONFIGTABLE* pt = &gCpuConfigTable[i];
 
-    if ( 
-      (gCpuInfo.model == pt->cpuType.model) && 
-      (gCpuInfo.family == pt->cpuType.family) && 
-      (gCpuInfo.stepping == pt->cpuType.stepping)) 
-    {
+    if (gCpuInfo.family   == pt->cpuType.family &&
+        gCpuInfo.model    == pt->cpuType.model  &&
+        gCpuInfo.stepping == pt->cpuType.stepping) {
+
       gActiveCpuData = pt;
-      
-      UiAsciiPrint("Detected CPU: %a, model: %u, family: %u, stepping: %u\n",
-        pt->uArch, pt->cpuType.model, pt->cpuType.family, pt->cpuType.stepping);
+
+      UiAsciiPrint(
+        "Detected CPU: %a, family: %u (0x%X), model: %u (0x%X), stepping: %u (0x%X)\n",
+        pt->uArch,
+        pt->cpuType.family,   pt->cpuType.family,
+        pt->cpuType.model,    pt->cpuType.model,
+        pt->cpuType.stepping, pt->cpuType.stepping);
+
+      return TRUE;
+    }
+  }
+
+  // Pass 2 — {family, model} fallback for unknown stepping
+  for (UINTN i = 1; i < tableSize; i++) {
+    CPUCONFIGTABLE* pt = &gCpuConfigTable[i];
+
+    if (gCpuInfo.family == pt->cpuType.family &&
+        gCpuInfo.model  == pt->cpuType.model) {
+
+      gActiveCpuData = pt;
+
+      UiAsciiPrint(
+        "WARNING: stepping 0x%X not in table — using closest sibling entry.\n"
+        "Detected CPU: %a, family: %u (0x%X), model: %u (0x%X), stepping: %u (0x%X) (fallback)\n",
+        gCpuInfo.stepping,
+        pt->uArch,
+        pt->cpuType.family,   pt->cpuType.family,
+        pt->cpuType.model,    pt->cpuType.model,
+        pt->cpuType.stepping, pt->cpuType.stepping);
 
       return TRUE;
     }

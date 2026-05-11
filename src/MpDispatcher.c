@@ -18,12 +18,12 @@
 
 #include "MpDispatcher.h"
 #include "HwAccess.h"
+#include <Library/UefiBootServicesTableLib.h>     // gBS
 
 //
 // Initialized at startup
 
 extern EFI_MP_SERVICES_PROTOCOL* gMpServices;
-extern EFI_BOOT_SERVICES* gBS;
 
 /*******************************************************************************
  *
@@ -51,6 +51,7 @@ VOID EFIAPI ProcessorIgnite(VOID* params)
   IgniteContext* pic = (IgniteContext*)params;
 
   VOID* coreStructAddr = GetCpuDataBlock();
+  VOID* oldGsBase = GetCpuGSBase();
 
   //
   // Set the GS register to point to coreStructAddr
@@ -81,7 +82,9 @@ VOID EFIAPI ProcessorIgnite(VOID* params)
     ///
 
     pic->userProc(pic->userParam);
-  }  
+  }
+
+  SetCpuGSBase(oldGsBase);
 }
 
 
