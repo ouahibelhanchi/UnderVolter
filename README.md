@@ -135,47 +135,53 @@ The combination of DellBiosCtrl and UnderVolter's SelfEnroll capability constitu
 
 ```mermaid
 flowchart TD
-    A[UEFI Firmware] --> B[UnderVolter.efi]
-    B --> C[Load UnderVolter.ini]
-    C --> D[Detect CPU Architecture]
-    D --> SE{SelfEnroll = 1?}
-    SE -->|Yes| SEF[Enroll root CA into db / KEK / PK]
-    SEF --> SER[Warm reset]
-    SE -->|No| NV{NvramPatchEnabled = 1?}
-    SER -.->|after reboot| B
-    NV -->|Yes| NVP[Patch BIOS Setup variable]
-    NVP --> NVR[Warm reset]
-    NVR -.->|after reboot| B
-    NV -->|No| E{Known CPU?}
+    A[UEFI Firmware BDS] --> B[UnderVolter.efi]
+    B --> C[Load UnderVolter.ini + GOP console]
+    C --> NV{NvramPatchEnabled = 1?}
+    NV -->|Yes — diff detected| NVP[Patch Setup var + verify read-back]
+    NVP --> NVR[BootNext = BootCurrent + Warm reset]
+    NVR -.->|next boot| B
+    NV -->|No — or already matches| SE{SelfEnroll = 1?}
+    SE -->|Yes — cert not in db| SEF[Enroll root CA into db / KEK / PK]
+    SEF --> SER[BootNext = BootCurrent + Warm reset]
+    SER -.->|next boot| B
+    SE -->|No — or already enrolled| E{Known CPU?}
     E -->|No| F[Show Warning + F10 Override]
-    E -->|Yes| G[Load Profile]
+    E -->|Yes — exact / fallback match| G[Load Profile]
     F --> G
     G --> H[Initialize MP Services]
     H --> I[Discover Packages]
     I --> J[Probe VR Topology]
-    J --> K[Apply Voltage Offsets]
+    J --> ESC{ESC pressed in 2s?}
+    ESC -->|Yes| EXIT[Skip — return EFI_SUCCESS]
+    ESC -->|No| K[Apply Voltage Offsets]
     K --> L[Program Power Limits]
     L --> M[Set Turbo Ratios]
     M --> N[Apply Locks]
     N --> O[Display Results]
-    O --> P[Exit to Boot Manager]
+    O --> P[return EFI_SUCCESS — firmware BDS picks next BootOrder entry]
+    EXIT --> P
 ```
 
 ### Execution Flow
 
-1. **Entry Point** — UEFI firmware loads `UnderVolter.efi` as application or driver
-2. **Configuration Load** — Parses `UnderVolter.ini` from same directory or known fallback paths
-3. **SelfEnroll** — If `[SecureBoot] SelfEnroll = 1`: checks whether root CA cert is already in UEFI `db`; if not, writes cert to `db`, `KEK`, `PK`, attempts Audit→Deployed Mode transition, and performs warm reset. If cert already present — no-op, continues normally
-4. **NVRAM Patch** — If `[SetupVar] NvramPatchEnabled = 1`: patches BIOS Setup variable byte offsets, verifies write by reading back (fail-closed — reboot only issued when write confirmed). If all offsets already hold target values — no write, no reboot
-5. **CPU Detection** — Reads CPUID to determine architecture, family, model, stepping
+Reboot-triggering stages (NVRAM patch, SelfEnroll) run **before** CPU detection, TSC calibration, and the startup animation.  On a bootstrap reboot, no downstream work is wasted before the warm reset.  Both stages are idempotent — subsequent passes are fast no-ops when state already matches the desired post-conditions.
+
+1. **Entry Point** — UEFI firmware BDS loads `UnderVolter.efi` as a `UefiApplication`
+2. **Configuration Load** — Parses `UnderVolter.ini` from same directory or known fallback paths; initialises GOP console
+3. **NVRAM Patch** — If `[SetupVar] NvramPatchEnabled = 1`: patches BIOS `Setup` byte offsets, **verifies write by reading back** (fail-closed — reboot only issued when write confirmed). If all offsets already hold target values → no write, no reboot. Before reboot, writes `BootNext = BootCurrent` to pin the next firmware boot to the same entry — defensive against firmware BDS quirks (some Lenovo Legion units treat warm reset as "boot failed" and skip to the next BootOrder entry)
+4. **SelfEnroll** — If `[SecureBoot] SelfEnroll = 1`: checks whether root CA cert is already in UEFI `db`; if not, writes cert to `db`, `KEK`, `PK`, attempts Audit→Deployed Mode transition. Reboot only after `db` and `KEK` writes are confirmed. Same `BootNext` pinning as NVRAM stage. If cert already in `db` → no-op
+5. **CPU Detection** — Reads CPUID, two-pass match against `gCpuConfigTable`: exact `{family, model, stepping}` first, then `{family, model}` fallback with warning for unknown steppings of known models
 6. **Profile Selection** — Matches detected CPU to INI profile (e.g., `Profile.CoffeeLake`)
-7. **MP Initialization** — Locates all logical processors via EFI MP Services Protocol
+7. **MP Initialization** — Locates all logical processors via `EFI_MP_SERVICES_PROTOCOL`
 8. **Package Discovery** — Enumerates physical packages and cores per package
-9. **VR Topology Probe** — Discovers voltage regulator addresses and types via OC Mailbox
-10. **Voltage Programming** — Applies offset voltages per domain via FIVR interface
-11. **Power Limit Programming** — Configures PL1/PL2/PL3/PL4/PP0 via MSR and MMIO
-12. **Lock Application** — Locks configuration registers to prevent OS modification
-13. **Status Display** — Shows applied settings and waits for user acknowledgment
+9. **VR Topology Probe** — Discovers voltage regulator addresses and types via OC Mailbox (where supported)
+10. **Emergency Exit Window** — 2-second ESC keypress window; ESC aborts before any MSR writes
+11. **Voltage Programming** — Applies offset voltages per domain via FIVR interface
+12. **Power Limit Programming** — Configures PL1/PL2/PL3/PL4/PP0 via MSR and MMIO
+13. **Lock Application** — Locks configuration registers to prevent OS modification
+14. **Status Display** — Shows applied settings table
+15. **Return** — `return EFI_SUCCESS` exits the `UefiApplication`; firmware BDS proceeds down the BootOrder list to the next entry (typically Windows Boot Manager)
 
 ### Memory Model
 
@@ -200,8 +206,10 @@ UnderVolter includes pre-configured profiles for the following Intel microarchit
 | Architecture | Generation | CPUID | Example Models | Safe Offset (P-Core) |
 |--------------|------------|-------|----------------|---------------------|
 | **Arrow Lake** | Core Ultra 200S/HX (15th) | `6,197,*` / `6,198,*` | Core Ultra 9 285K | -30 mV (conservative) |
-| **Meteor Lake** | Core Ultra 100/200 H/U (14th) | `6,170,*` | Core Ultra 7 155H | -30 mV (conservative) |
-| **Raptor Lake** | 13th/14th Gen | `6,183,*` / `6,186,*` / `6,191,*` | i9-14900K, i7-13700K | -80 mV |
+| **Lunar Lake** | Core Ultra 200V (2nd-gen Core Ultra mobile) | `6,189,*` | Core Ultra 7 268V | -30 mV (experimental — OC Mailbox restricted) |
+| **Meteor Lake** | Core Ultra 1xx H/U (1st-gen Core Ultra mobile) | `6,170,*` | Core Ultra 7 155H | -30 mV (conservative) |
+| **Raptor Lake Refresh** | 14th Gen Desktop / HX Mobile | `6,191,*` / `6,186,4` | i9-14900K, i9-14900HX | -80 mV |
+| **Raptor Lake** | 13th Gen | `6,183,*` / `6,186,2-3` | i9-13900K, i7-13700K | -80 mV |
 | **Alder Lake** | 12th Gen | `6,151,*` / `6,154,*` | i9-12900K, i5-12600K | -80 mV |
 | **Rocket Lake** | 11th Gen Desktop | `6,167,*` | i9-11900K, i7-11700K | -80 mV |
 | **Tiger Lake** | 11th Gen Mobile | `6,140,*` / `6,141,*` | i7-1185G7, i7-11800H | -80 mV |
@@ -224,9 +232,18 @@ UnderVolter includes pre-configured profiles for the following Intel microarchit
 - Conservative defaults: IACORE/ECORE -30 mV, RING -20 mV, GT/Uncore 0 mV
 - Many OEM BIOSes lock undervolting; if locked, these offsets won't apply
 
-**Lunar Lake (Core Ultra 200V, 15th Gen laptop)**
-- Uses embedded power delivery (ePD) — traditional MSR 0x150 voltage offset does **not** apply
-- **No profile in UnderVolter** — this architecture is not supported
+**Lunar Lake (Core Ultra 200V, 2nd-gen Core Ultra mobile)**
+- 2-tile architecture: Compute (Lion Cove P-cores, no HT + Skymont E-cores) + Platform Controller (SoC, Xe2 Battlemage GPU, Media, IO)
+- On-package LPDDR5X — no discrete memory controller
+- DLVR voltage regulation throughout (same as Arrow Lake)
+- **Profile included** in UnderVolter (`vcfg_q_lunarlake_client`) — conservative defaults applied
+- **OC Mailbox heavily restricted** on production silicon — VR topology discovery disabled; voltage offsets via MSR 0x150 attempted but may be silently dropped by firmware on locked SKUs
+- VR bit layout for LNL not yet publicly reverse-engineered — to be revisited when community data matures
+
+**Raptor Lake Refresh (14th Gen Desktop, 14th Gen HX Mobile)**
+- Die-identical to Raptor Lake — same FIVR/OC Mailbox topology, same voltage offset behaviour
+- Desktop CPUID `6,191,*` (BF02, BF03); mobile HX CPUID `6,186,4` (BA04)
+- All Alder Lake / Raptor Lake INI templates apply unchanged
 
 **Tiger Lake (11th Gen Mobile)**
 - All-P-Core design (Willow Cove) — **no E-Core domain**; `OffsetVolts_ECORE` has no effect
@@ -247,6 +264,19 @@ UnderVolter includes pre-configured profiles for the following Intel microarchit
 - Ring domain often shares voltage plane with E-Cores on desktop variants
 - GT Slice/Uncore domains may respond independently
 - Keep IACORE/RING/ECORE offsets close (ideally within ~20-30 mV) to avoid instability
+
+### CPU Detection Strategy
+
+`DetectCpu()` uses a two-pass match against `gCpuConfigTable`:
+
+1. **Pass 1 — exact match**: matches `{family, model, stepping}` exactly.  Preserves precise behaviour for every known CPU revision in the table.
+2. **Pass 2 — model fallback**: if Pass 1 misses, retries with `{family, model}` only — picks the first sibling entry in table order and prints a warning.  Future microcode revisions of known models (e.g. a hypothetical RPL-S D0 stepping) get detected automatically instead of falling through to the "Unknown CPU" warning path.
+
+Entries within a single `(family, model)` pair share the same uArch and VR template by design, so the fallback is safe — only the displayed stepping label drifts.  The warning makes the substitution visible to the user.  Output shows CPUID values in both decimal and hex for cross-referencing with Intel documentation:
+
+```
+Detected CPU: RaptorLake, family: 6 (0x6), model: 191 (0xBF), stepping: 2 (0x2)
+```
 
 ---
 
@@ -684,8 +714,13 @@ The UEFI firmware stores all hidden BIOS settings in a flat byte array called `S
 2. Compares each configured `Patch_N` offset against the desired value
 3. If all bytes already match — **no write, no reboot** (prevents infinite restart loops)
 4. If any byte differs — patches the buffer, calls `SetVariable`, then **reads back and verifies**
-5. Reboot is only triggered when the write is confirmed — fail-closed design; a silent firmware write failure does not cause a reboot loop
-6. After the reboot, BIOS POST reads the new values and leaves the MSR locks unset — UnderVolter can now program voltage offsets normally
+5. Before reboot, writes `BootNext = BootCurrent` so the next firmware BDS pass returns to the same boot entry — defensive against firmware quirks (some Lenovo Legion units skip to the next BootOrder entry after a warm reset)
+6. Reboot is only triggered when the write is confirmed — fail-closed design; a silent firmware write failure does not cause a reboot loop
+7. After the reboot, BIOS POST reads the new values and leaves the MSR locks unset — UnderVolter can now program voltage offsets normally
+
+**Offset width:** `Patch_N` offsets are parsed as 24-bit values (cap `0xFFFFFF`).  This accommodates Dell Precision-class workstation BIOSes with `Setup` variables up to ~96 KB; the historical 16-bit cap (`0xFFFF`) is no longer the limit.  The real bound at write time is the live `dataSize` returned by `GetVariable()` — offsets ≥ that size are skipped with a diagnostic.
+
+**Section header parsing:** the INI parser tolerates whitespace inside section brackets — `[SetupVar]`, `[ SetupVar ]`, and `[SetupVar  ]` all match.  Same applies to `[SecureBoot]`.
 
 ### Finding Offsets for Your Machine
 
