@@ -27,6 +27,7 @@
     <ClCompile Include="UnderVolter.c" />
     <ClCompile Include="TurboRatioLimits.c" />
     <ClCompile Include="VoltTables.c" />
+    <ClCompile Include="IniHelpers.c" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="ASMx64">
@@ -124,6 +125,7 @@
     <ClInclude Include="UnderVolterCert.h">
       <Filter>Include</Filter>
     </ClInclude>
+    <ClInclude Include="IniHelpers.h" />
   </ItemGroup>
   <ItemGroup>
     <MASM Include="ASMx64\CpuStressorAvx2.asm">
