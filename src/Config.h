@@ -16,6 +16,7 @@
 
 extern UINT32  gAppDelaySeconds;
 extern BOOLEAN gAppQuietMode;
+extern BOOLEAN gSkipAnimation;
 extern BOOLEAN gIniFound;
 
 // Runtime safety / behaviour flags (defined in Config.c, populated from INI).

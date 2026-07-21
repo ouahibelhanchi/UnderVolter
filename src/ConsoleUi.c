@@ -4,6 +4,7 @@
 //               Falls back to an ASCII art banner when GOP is unavailable.
 #include "ConsoleUi.h"
 #include "UiConsole.h"
+#include "Config.h"
 #include <Library/UefiBootServicesTableLib.h>     // gBS
 
 // ─── Sine LUT (64 entries, values 0-255, one full cycle) ─────────────────────
@@ -368,7 +369,7 @@ static VOID DrawTitle(UINTN frame, UINTN titleX, UINTN titleY, UINTN scale)
 // Falls back to a plain ASCII art header if no GOP framebuffer is available.
 VOID RunStartupAnimation(VOID)
 {
-  if (!UiGfxIsReady()) {
+  if (gSkipAnimation || !UiGfxIsReady()) {
     UiAsciiPrint(
       " _   _ _   _ ____  _____ ______     ______  _    _______ _____ ____  \n"
       "| | | | \\ | |  _ \\| ____|  _ \\ \\   / / __ \\| |  |__   __|  ___|  _ \\ \n"
@@ -477,7 +478,7 @@ VOID RunStartupAnimation(VOID)
 // Clear the upper half of the screen where the animation was drawn
 VOID UiClearAnimationArea(VOID)
 {
-  if (!UiGfxIsReady()) {
+  if (gSkipAnimation || !UiGfxIsReady()) {
     return;
   }
   

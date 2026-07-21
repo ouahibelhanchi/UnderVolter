@@ -615,6 +615,7 @@ static VOID SetDomainSettings(CHAR8* IniData, CONST CHAR8* Sec, PACKAGE* pk, UIN
 
 UINT32 gAppDelaySeconds = 0;
 BOOLEAN gAppQuietMode = FALSE;
+BOOLEAN gSkipAnimation = FALSE;
 BOOLEAN gIniFound = FALSE;
 
 // Idempotent loader: reads and caches the INI file on first call; subsequent
@@ -650,6 +651,7 @@ VOID LoadAppSettings(VOID)
 
   gAppDelaySeconds = (UINT32)IniGetInt(gIniData, "Global", "DelaySeconds", 0);
   gAppQuietMode = (BOOLEAN)IniGetInt(gIniData, "Global", "QuietMode", 0);
+  gSkipAnimation = (BOOLEAN)IniGetInt(gIniData, "Global", "SkipAnimation", 0);
 
   CHAR8* val = NULL;
 
