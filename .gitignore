@@ -1,9 +1,32 @@
 # Build output
 bin/
 
+# Visual Studio build output
+x64/
+Debug/
+Release/
+
+# Intermediate build files
+*.obj
+*.pdb
+*.ilk
+
+# UEFI output
+*.efi
+
 # Generated release archives
 data/*.7z
 
 # Internal release/build scripts — not for public repo
 *.sh
 release-now.md
+
+# Visual Studio user files
+.vs/
+*.suo
+*.user
+
+# EDK II generated files
+Build/
+*.map
+*.lst
