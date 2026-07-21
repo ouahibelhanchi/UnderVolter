@@ -2,12 +2,12 @@
 # i7-9750H Coffee Lake - family=6, model=158, stepping=10
 # Uruchom: .\run-qemu.ps1
 
-$vmDir    = "C:\vm\qemu"
+$vmDir    = "vm\qemu"
 $qemu     = "C:\PROGRA~1\qemu\qemu-system-x86_64w.exe"
 $ovmfCode = "C:\PROGRA~1\qemu\share\edk2-x86_64-code.fd"
 $ovmfVars = "$vmDir\ovmf-vars.fd"
-$efiSrc   = "$PSScriptRoot\bin\UnderVolter.efi"
-$iniSrc   = "$PSScriptRoot\bin\UnderVolter.ini"
+$efiSrc   = "$PSScriptRoot\bin\x64\Release\UnderVolter.efi"
+$iniSrc   = "$PSScriptRoot\bin\x64\Release\UnderVolter.ini"
 $efiDisk  = $vmDir
 $efiDest  = "$efiDisk\undervolter.efi"
 $iniDest  = "$efiDisk\UnderVolter.ini"
@@ -19,6 +19,10 @@ $gfxHeight = 1080
 $zoomToFit = "on"  # on = mniejsze okno i mniejsze literki przez skalowanie; off = 1:1
 
 Write-Host "`n=== UnderVolter QEMU ===" -ForegroundColor Cyan
+
+New-Item -ItemType Directory -Path $vmDir -Force | Out-Null
+
+Invoke-WebRequest -Uri "https://qemu.weilnetz.de/test/ovmf/usr/share/OVMF/OVMF_VARS.fd" -OutFile $ovmfVars
 
 foreach ($f in @($qemu, $ovmfCode, $ovmfVars, $efiSrc)) {
     if (!(Test-Path $f)) { Write-Error "Brak pliku: $f"; exit 1 }

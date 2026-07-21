@@ -6,7 +6,7 @@ $binDir       = Join-Path $projectRoot "bin"
 $vsDir        = Join-Path $projectRoot ".vs"
 $slnPath      = Join-Path $projectRoot "UnderVolter.sln"
 $srcDir       = Join-Path $projectRoot "src"
-$outputDir    = Join-Path $projectRoot "x64\Release"
+$outputDir    = Join-Path $projectRoot "bin\x64\Release"
 $embedScript  = Join-Path $projectRoot "Signer\embed-cert.ps1"
 $signScript   = Join-Path $projectRoot "Signer\sign.ps1"
 
@@ -92,28 +92,15 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "  Build completed successfully" -ForegroundColor Green
 
 # ============================================================================
-# Step 4: Copy output to bin
+# Step 4: Copy config to bin
 # ============================================================================
 Write-Host ""
-Write-Host "--- Copying to bin ---" -ForegroundColor Cyan
-
-# Copy EFI binaries
-$efiNames = @("UnderVolter.efi", "Loader.efi")
-foreach ($efiName in $efiNames) {
-    $efiSource = Join-Path $outputDir $efiName
-    if (Test-Path $efiSource) {
-        Copy-Item -Path $efiSource -Destination $binDir -Force
-        Write-Host "  Copied: $efiName" -ForegroundColor Green
-    } else {
-        Write-Host "  ERROR: $efiName not found in $outputDir" -ForegroundColor Red
-        exit 1
-    }
-}
+Write-Host "--- Copying config to bin ---" -ForegroundColor Cyan
 
 # Copy UnderVolter.ini
 $iniSource = Join-Path $srcDir "UnderVolter.ini"
 if (Test-Path $iniSource) {
-    Copy-Item -Path $iniSource -Destination $binDir -Force
+    Copy-Item -Path $iniSource -Destination $outputDir -Force
     Write-Host "  Copied: UnderVolter.ini" -ForegroundColor Green
 } else {
     Write-Host "  WARNING: UnderVolter.ini not found in $srcDir" -ForegroundColor Yellow
@@ -193,7 +180,7 @@ Write-Host "--- Cleaning build output ---" -ForegroundColor Cyan
 
 if (Test-Path $outputDir) {
     Get-ChildItem -Path $outputDir | Where-Object {
-        $_.Name -notlike "*.efi"
+        $_.Name -notlike "*.efi" -and $_.Name -notlike "*.ini"
     } | Remove-Item -Recurse -Force
     Write-Host "  Cleaned: $outputDir" -ForegroundColor Gray
 }

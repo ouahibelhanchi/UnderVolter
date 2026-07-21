@@ -30,3 +30,6 @@ release-now.md
 Build/
 *.map
 *.lst
+
+# QEMU
+vm/
