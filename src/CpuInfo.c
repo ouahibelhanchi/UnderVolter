@@ -40,9 +40,9 @@ void GetCpuInfo(CPUINFO* ci)
   UINT32* brandstr = (UINT32*)ci->brandString;
 
   // Leaves 0x80000002-4 return 16 bytes of brand string each (48 bytes total)
-  AsmCpuidRegisters(0x80000002, venstr);
-  AsmCpuidRegisters(0x80000003, venstr+4);
-  AsmCpuidRegisters(0x80000004, venstr+12);
+  AsmCpuidRegisters(0x80000002, brandstr);
+  AsmCpuidRegisters(0x80000003, brandstr + 4);
+  AsmCpuidRegisters(0x80000004, brandstr + 8);
 
   ///////////////////
   // Vendor String //
@@ -54,9 +54,9 @@ void GetCpuInfo(CPUINFO* ci)
   
   UINT32 hscall = ci->maxf = regs[CPUID_EAX];
   
-  brandstr[0] = regs[CPUID_EBX];
-  brandstr[1] = regs[CPUID_EDX];
-  brandstr[2] = regs[CPUID_ECX];
+  venstr[0] = regs[CPUID_EBX];
+  venstr[1] = regs[CPUID_EDX];
+  venstr[2] = regs[CPUID_ECX];
  
   AsmCpuidRegisters(0x01, regs);
 

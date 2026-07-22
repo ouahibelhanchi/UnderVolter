@@ -8,8 +8,8 @@
 
 typedef struct _CPUINFO
 {
-  UINT8 venString[64];
-  UINT8 brandString[8];
+  UINT8 venString[12];
+  UINT8 brandString[48];
 
   UINT32 f1;
   UINT32 maxf;

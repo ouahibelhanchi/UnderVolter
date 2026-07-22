@@ -367,7 +367,7 @@ VOID PrintPlatformSettings(IN PLATFORM* psys)
     UiSetAttribute(EFI_LIGHTCYAN);
     UiPrint(L" Package %u  \x2014  ", pidx);   // U+2014 em dash
     UiSetAttribute(EFI_WHITE);
-    UiAsciiPrint((CHAR8*)pac->CpuInfo.venString);
+    UiAsciiPrint((CHAR8*)pac->CpuInfo.brandString);
     UiPrint(L"\n\n");
 
     if (UiGfxIsReady() && SW > 0 && tableW <= SW) {
