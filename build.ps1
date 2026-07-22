@@ -108,7 +108,7 @@ if (Test-Path $iniSource) {
 
 # Set future timestamp on all files in bin (2030-01-01 00:00:00)
 Write-Host "  Setting file dates to 2030-01-01 00:00:00" -ForegroundColor Gray
-Get-ChildItem -Path $binDir | ForEach-Object {
+Get-ChildItem -Path $outputDir | ForEach-Object {
     $_.LastWriteTime = $futureDate
     $_.CreationTime = $futureDate
     $_.LastAccessTime = $futureDate
@@ -123,7 +123,7 @@ Write-Host "--- Signing UnderVolter.efi ---" -ForegroundColor Cyan
 $signerCertDir = Join-Path $projectRoot "Signer\cert"
 $pfxFile  = Get-ChildItem -Path $signerCertDir -Filter "*-standard-signing.pfx" -ErrorAction SilentlyContinue | Select-Object -First 1
 $pwdFile  = Get-ChildItem -Path $signerCertDir -Filter "*-standard-signing.pwd" -ErrorAction SilentlyContinue | Select-Object -First 1
-$efiToSign = Join-Path $binDir "UnderVolter.efi"
+$efiToSign = Join-Path $outputDir "UnderVolter.efi"
 
 if ($pfxFile -and $pwdFile) {
     # Locate signtool.exe from the newest installed Windows Kit
@@ -160,11 +160,11 @@ if ($pfxFile -and $pwdFile) {
 
             # Keep the build output tree in sync with the signed artifact.
             # x64\Release\UnderVolter.efi is used by some local boot/debug flows.
-            $signedOutputCopy = Join-Path $outputDir "UnderVolter.efi"
+            $signedOutputCopy = Join-Path $outputDir "UnderVolter-signed.efi"
             Copy-Item -LiteralPath $efiToSign -Destination $signedOutputCopy -Force
             $signedItem = Get-Item -LiteralPath $signedOutputCopy
             $signedItem.LastWriteTime = $signedItem.CreationTime = $signedItem.LastAccessTime = $futureDate
-            Write-Host "  Updated signed copy: x64\\Release\\UnderVolter.efi" -ForegroundColor Green
+            Write-Host "  Signed copy: x64\\Release\\UnderVolter-signed.efi" -ForegroundColor Green
         }
     }
 } else {
@@ -193,8 +193,8 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "BUILD COMPLETED SUCCESSFULLY" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Output directory: $binDir" -ForegroundColor White
-Get-ChildItem -Path $binDir | ForEach-Object {
+Write-Host "Output directory: $outputDir" -ForegroundColor White
+Get-ChildItem -Path $outputDir | ForEach-Object {
     Write-Host "  - $($_.Name) ($($_.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')))" -ForegroundColor Gray
 }
 Write-Host ""

@@ -472,6 +472,22 @@ static BOOLEAN SbeWriteCertToVar(
     return TRUE;  // PK write: trust non-error return; Setup Mode just ended
 }
 
+static BOOLEAN SbeIsSecureBootEnabled(IN EFI_RUNTIME_SERVICES* RT)
+{
+    UINT8  SecureBoot = 0;
+    UINTN  Size = sizeof(SecureBoot);
+
+    EFI_STATUS status = RT->GetVariable(
+        L"SecureBoot",
+        &gSbeGlobalVarGuid,
+        NULL,
+        &Size,
+        &SecureBoot
+    );
+
+    return (!EFI_ERROR(status) && SecureBoot == 1);
+}
+
 // ─── SetupMode check ─────────────────────────────────────────────────────────
 
 static BOOLEAN SbeIsSetupMode(IN EFI_RUNTIME_SERVICES* RT) {
@@ -618,6 +634,10 @@ VOID EnrollSecureBootKeys(
 
     EFI_BOOT_SERVICES*    BS = SystemTable->BootServices;
     EFI_RUNTIME_SERVICES* RT = SystemTable->RuntimeServices;
+
+    if (!SbeIsSecureBootEnabled(RT)) {
+        return;
+    }
 
     // ── SelfEnroll: enroll embedded root CA cert into db, KEK, PK ────────────
     //
