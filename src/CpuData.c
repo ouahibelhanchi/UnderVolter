@@ -114,7 +114,7 @@ CPUCONFIGTABLE gCpuConfigTable[] = {
   { {6, 141, 1} , "TigerLake", 0, 10, 1, 0, &vcfg_q_tigerlake_client },
   { {6, 142, 9} , "Kabylake", 0, 10, 0, 0, &vcfg_q_xyzlake_client },
   { {6, 142, 10} , "Kabylake", 0, 10, 0, 0, &vcfg_q_xyzlake_client },
-  { {6, 142, 11} , "WhiskeyLake", 0, 10, 0, 0, &vcfg_q_xyzlake_client },
+  { {6, 142, 12} , "WhiskeyLake", 0, 10, 0, 0, &vcfg_q_xyzlake_client },
   { {6, 142, 12} , "Comet Lake-U", 0, 10, 0, 0, &vcfg_q_xyzlake_client },
   { {6, 156, 0} , "JasperLake", 0, 10, 0, 0, NULL },
   { {6, 158, 9} , "KabylakeG", 0, 10, 0, 0, NULL },
